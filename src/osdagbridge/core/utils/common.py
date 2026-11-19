@@ -43,6 +43,11 @@ TYPE_SEGMENT_TABLE  = "segment_table"
 TYPE_ADAPTIVE = "adaptive"
 TYPE_ALL_CUSTOM = "all_custom"   # combo [All, Custom] where Custom opens popup dialog
 
+# Additional Inputs: Custom-mode validation
+VALUE_CUSTOM = "Custom"   # dropdown/radio value that unlocks a user-typed field
+SUFFIX_MODE  = ".mode"    # objectName suffix of a mode combo   (<key>.mode)
+SUFFIX_VALUE = ".value"   # objectName suffix of its value box  (<key>.value)
+
 # ========== Type of Fields End ==========================================================
 
 # Keys for inputs (consistent dot notation for object names)
