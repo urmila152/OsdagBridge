@@ -655,11 +655,10 @@ class AdditionalInputs(QDialog):
             pass
 
     def _show_empty_custom_error(self, problems: list) -> None:  # utility: error popup naming every empty Custom field, then jumps to the first one
-        names = "\n".join(f"• {label}" for _, label in problems)
+        message = "\n".join(f"Error: The custom value for '{label}' cannot be empty." for _, label in problems)
         CustomMessageBox(
             title="Empty Custom Field",
-            text=f"Custom is selected but no value is entered for:\n\n{names}",
-            informativeText="Enter a value or choose a different option, then click Save.",
+            text=message,
             buttons=["OK"],
             dialogType=MessageBoxType.Critical,
         ).exec()
@@ -687,7 +686,7 @@ class AdditionalInputs(QDialog):
             return True
         choice = CustomMessageBox(
             title="Unsaved Changes",
-            text="You have unsaved changes in Additional Inputs.\n\nDiscard the changes and close?",
+            text="You have unsaved changes. Closing this window will discard them. Do you want to proceed?",
             buttons=[self._BUTTON_DISCARD, self._BUTTON_CANCEL],
             dialogType=MessageBoxType.Warning,
         ).exec()
