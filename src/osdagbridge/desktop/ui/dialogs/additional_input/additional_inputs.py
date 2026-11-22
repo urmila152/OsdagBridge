@@ -518,6 +518,21 @@ class AdditionalInputs(QDialog):
 
     # ── Dialog Persistence ───────────────────────────────────────────────────────
 
+    def apply_cad_edit(self, key: str, text: str, input_dict: dict) -> bool:  # Task I: value typed into a 2D CAD label (girder spacing / deck thickness)
+        """Syncs with the live inputs, applies the value through the normal validation and
+        layout solver, then commits it to the shared input dictionary (no popups on success)."""
+        self.set_input_dictionary(input_dict)
+        field = self.findChild(QLineEdit, key)
+        if field is None:
+            return False
+        field.setText(text)
+        self._on_field_edited(key, field)
+        if key == KEY_TS_GIRDER_SPACING:
+            self.update_girder_layout("spacing")
+        self.default_input_dict.update(self.working_input_dict)
+        self.is_modified = False
+        return True
+
     def _save_inputs(self):  # on_change: validates all tabs then commits working_input_dict and emits CAD update signal
 
         # Block the save if any field set to Custom has been left empty

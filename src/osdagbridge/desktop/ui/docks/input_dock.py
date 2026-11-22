@@ -946,6 +946,17 @@ class InputDock(QWidget):
         # by default return False
         return False
 
+    def apply_cad_edit(self, key: str, text: str) -> bool:
+        """Task I: a value typed into a 2D CAD label. Goes through the same validation as typing in the box."""
+        if self.is_locked:
+            return False
+        widget = self._w(key)
+        if not isinstance(widget, QLineEdit):
+            return False
+        widget.setText(text)
+        self._on_field_edited(key, widget)
+        return True
+
     def _on_field_edited(self, key: str, widget: QLineEdit | str):
         """
         Called on editingFinished (QLineEdit) or currentTextChanged (QComboBox).

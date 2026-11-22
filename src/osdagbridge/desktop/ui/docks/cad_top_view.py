@@ -6,7 +6,8 @@ Author: Arushi
 from osdagbridge.core.utils.common import *
 import math
 from PySide6.QtWidgets import QWidget, QPushButton, QScrollArea
-from PySide6.QtCore import Qt, QRectF, QPointF, QTimer, QSize
+from PySide6.QtCore import Qt, QRectF, QPointF, QTimer, QSize, Signal
+from .cad_label_editor import CadLabelEditor
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush, QPolygonF, QIcon
 from .cad_cross_section import CrossSectionCADWidget
 
@@ -26,6 +27,7 @@ LEADER_TEXT_OFFSET = 25    # leader label distance
 
 
 class TopViewCADWidget(QWidget):
+    parameter_edited = Signal(str, str)   # (input key, new value text) from a double-clicked label
     """Widget for drawing bridge top view"""
     
     def __init__(self, parent=None):
@@ -33,6 +35,7 @@ class TopViewCADWidget(QWidget):
         self.show_dimensions = True
         self.show_span_values = False
         self.show_carriageway_values = False
+        self.label_editor = CadLabelEditor(self, self.parameter_edited.emit)
         self.setMouseTracking(True)  # enable mouse tracking for hover
         
         # top view hover tracking 
@@ -477,9 +480,15 @@ class TopViewCADWidget(QWidget):
             self.hovered_top_view_element = new_hovered
             self.update()
 
+    def mouseDoubleClickEvent(self, event):
+        """Task I: double-click on an editable dimension label opens an inline editor."""
+        if not self.label_editor.handle_double_click(event):
+            super().mouseDoubleClickEvent(event)
+
     def paintEvent(self, event):
         # clear hover zones at start of each paint
         self.top_view_hover_zones = []
+        self.label_editor.clear_zones()
         
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -515,6 +524,7 @@ class TopViewCADWidget(QWidget):
             total_height + 2 * padding
         )
 
+        self.label_editor.register(bg_rect, text)  # Task I: remember where editable labels are drawn
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(bg_color))
         painter.drawRect(bg_rect)

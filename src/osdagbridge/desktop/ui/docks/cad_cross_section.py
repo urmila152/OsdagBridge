@@ -6,7 +6,8 @@ Author: Arushi
 
 import math
 from PySide6.QtWidgets import QWidget, QPushButton, QScrollArea
-from PySide6.QtCore import Qt, QRectF, QPointF, QTimer, QSize
+from PySide6.QtCore import Qt, QRectF, QPointF, QTimer, QSize, Signal
+from .cad_label_editor import CadLabelEditor
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QBrush, QPolygonF, QIcon, QPixmap
 from osdagbridge.core.utils.common import *
 from osdagbridge.desktop.cad.irc5_geometry import (
@@ -18,6 +19,7 @@ from osdagbridge.desktop.cad.irc5_geometry import (
 
 class CrossSectionCADWidget(QWidget):
     """Widget for drawing bridge cross-section view"""
+    parameter_edited = Signal(str, str)   # (input key, new value text) from a double-clicked label
     # ===== SHARED CAD COLORS =====
     GIRDER_COLOR = QColor(179, 180, 160) 
     STIFFENER_COLOR = QColor(210, 210, 205)
@@ -38,6 +40,7 @@ class CrossSectionCADWidget(QWidget):
         self.show_dimensions = True
         self.show_span_values = False
         self.show_carriageway_values = False
+        self.label_editor = CadLabelEditor(self, self.parameter_edited.emit)
         self.setMouseTracking(True)  # enable mouse tracking for hover
         self.concrete_brush = self.create_concrete_brush()
         self.crash_barrier_params = {}
@@ -721,6 +724,11 @@ class CrossSectionCADWidget(QWidget):
             self.update()
 
         
+    def mouseDoubleClickEvent(self, event):
+        """Task I: double-click on an editable dimension label opens an inline editor."""
+        if not self.label_editor.handle_double_click(event):
+            super().mouseDoubleClickEvent(event)
+
     def paintEvent(self, event):
         # Position buttons on first paint if not done yet
         if hasattr(self, 'zoom_in_btn') and not hasattr(self, '_buttons_positioned'):
@@ -729,6 +737,7 @@ class CrossSectionCADWidget(QWidget):
         # clear hover labels and zones at start of each paint
         self.hover_labels = []
         self.cross_section_hover_zones = []
+        self.label_editor.clear_zones()
         
         painter = QPainter(self)
         try:
@@ -767,6 +776,7 @@ class CrossSectionCADWidget(QWidget):
             total_height + 2 * padding
         )
 
+        self.label_editor.register(bg_rect, text)  # Task I: remember where editable labels are drawn
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(bg_color))
         painter.drawRect(bg_rect)

@@ -788,6 +788,25 @@ class CustomWindow(QWidget):
         # This will update the CAD whenever any input field changes
         if hasattr(self.input_dock, 'input_value_changed'):
             self.input_dock.input_value_changed.connect(self.update_cad_from_inputs)        
+        # Task I: values typed directly into the 2D CAD labels
+        self.cad_comp_widget.cad_parameter_edited.connect(self._on_cad_parameter_edited)
+
+    def _on_cad_parameter_edited(self, key: str, text: str):
+        """Task I: push a value typed into a CAD label to the Basic / Additional input dictionaries, then redraw."""
+        if self.input_dock.is_locked:
+            CustomMessageBox(
+                title="Inputs Locked",
+                text="The inputs are locked. Unlock them to edit values from the CAD.",
+                dialogType=MessageBoxType.Information,
+            ).exec()
+            return
+        if key in (KEY_SPAN, KEY_CARRIAGEWAY_WIDTH):
+            self.input_dock.apply_cad_edit(key, text)  # marks the required fields as changed, so layout is re-solved
+        elif key in (KEY_TS_GIRDER_SPACING, KEY_TS_DECK_THICKNESS):
+            self._get_additional_inputs().apply_cad_edit(key, text, self.input_dict)
+            # the dialog already solved the layout; re-solving here would overwrite the typed spacing
+            self.input_dock.is_require_field_changed = False
+        self.update_cad_from_inputs()
             
     # Function for saving input dictionary into an OSI file
     def saveOSI_inputs(self):
