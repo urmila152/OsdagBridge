@@ -355,6 +355,136 @@ def restructure_data(
     return data
 
 
+# ── Transverse members (Task III) ────────────────────────────────────────────
+# All transverse / longitudinal classification and the extraction of transverse-member
+# values lives here, so the plots and the exported data agree on which element tags are
+# transverse and which are longitudinal.
+
+def split_longitudinal_transverse(nodes: dict, members: dict, tol: float = 1e-3) -> tuple[list, list]:
+    """Split element tags into (longitudinal, transverse).
+
+    Longitudinal: both end nodes share the same Z and Y (the member runs along the span).
+    Transverse: every other member (it crosses from one girder line to another).
+    """
+    longitudinal, transverse = [], []
+    for tag, (n1, n2) in members.items():
+        if n1 not in nodes or n2 not in nodes:
+            continue
+        if (abs(nodes[n1][2] - nodes[n2][2]) < tol and
+                abs(nodes[n1][1] - nodes[n2][1]) < tol):
+            longitudinal.append(tag)
+        else:
+            transverse.append(tag)
+    return longitudinal, transverse
+
+
+def build_transverse_lines(nodes: dict, members: dict, tol: float = 1e-3) -> list[list]:
+    """Group the transverse elements into lines across the deck.
+
+    Elements that share nodes belong to the same line (one end diaphragm or one
+    intermediate cross-bracing line).  Each line is returned as a list of element tags
+    ordered across the bridge (increasing Z); the lines are ordered along the span.
+    """
+    _, transverse = split_longitudinal_transverse(nodes, members, tol)
+
+    parent: dict = {}
+
+    def find(a):
+        parent.setdefault(a, a)
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for e in transverse:
+        n1, n2 = members[e]
+        parent[find(n1)] = find(n2)
+
+    groups: dict = {}
+    for e in transverse:
+        groups.setdefault(find(members[e][0]), []).append(e)
+
+    lines = []
+    for elems in groups.values():
+        elems.sort(key=lambda e: min(nodes[members[e][0]][2], nodes[members[e][1]][2]))
+        lines.append(elems)
+    lines.sort(key=lambda ln: min(nodes[members[ln[0]][0]][0], nodes[members[ln[0]][1]][0]))
+    return lines
+
+
+def transverse_line_forces(ds, line: list, nodes: dict, members: dict,
+                           comp_i: str, comp_j: str, flip_last: bool = False,
+                           divisor: float = 1000.0):
+    """Internal-force values along one transverse line, from the analysis dataset.
+
+    Returns (xs, zs, vals, node_ids): one point per node along the line, in order of
+    increasing Z.  vals[k] is the i-end value of the element starting at node k, and the
+    last point carries the j-end value of the last element (sign flipped when
+    flip_last is True, matching the longitudinal shear diagram).
+    """
+    comps = {str(c).lower(): c for c in ds["Component"].values}
+    ci, cj = comps.get(comp_i.lower()), comps.get(comp_j.lower())
+
+    def force(elem, comp):
+        return float(ds["forces"].sel(Element=elem, Component=comp).values)
+
+    xs, zs, vals, ids = [], [], [], []
+    last = None
+    for e in line:
+        a, b = members[e]
+        if nodes[a][2] <= nodes[b][2]:
+            start, end, v_start, v_end = a, b, force(e, ci), force(e, cj)
+        else:
+            start, end, v_start, v_end = b, a, force(e, cj), force(e, ci)
+        xs.append(nodes[start][0]); zs.append(nodes[start][2])
+        vals.append(round(v_start / divisor, 3)); ids.append(start)
+        last = (end, v_end)
+
+    if last is not None:
+        end, v_end = last
+        xs.append(nodes[end][0]); zs.append(nodes[end][2])
+        vals.append(round(v_end / divisor, 3)); ids.append(end)
+        if flip_last:
+            vals[-1] = -vals[-1]
+    return xs, zs, vals, ids
+
+
+def displacement_by_node(ds, comp_name: str) -> dict:
+    """{node tag: displacement in mm} for one component ('dx', 'dy' or 'dz')."""
+    short = {"dx": "x", "dy": "y", "dz": "z"}
+    target = short.get(comp_name.lower(), comp_name)
+    out: dict = {}
+    if "displacements" not in ds.data_vars:
+        return out
+    actual = None
+    for c in ds["displacements"].coords["Component"].values:
+        if str(c).lower() == target.lower():
+            actual = c
+            break
+    if actual is None:
+        return out
+    for node_id in ds["displacements"].coords["Node"].values:
+        val = float(ds["displacements"].sel(Node=node_id, Component=actual).values)
+        if str(actual).lower() in ("y", "z"):
+            val = -val                      # engineering sign: sag is positive
+        out[int(node_id)] = val * 1000.0    # m -> mm
+    return out
+
+
+def transverse_line_displacements(line: list, nodes: dict, members: dict, disp_by_node: dict):
+    """Displacement values along one transverse line: (xs, zs, vals, node_ids), increasing Z."""
+    node_ids = []
+    for e in line:
+        for n in members[e]:
+            if n not in node_ids:
+                node_ids.append(n)
+    node_ids.sort(key=lambda n: nodes[n][2])
+    xs = [nodes[n][0] for n in node_ids]
+    zs = [nodes[n][2] for n in node_ids]
+    vals = [disp_by_node.get(int(n), 0.0) for n in node_ids]
+    return xs, zs, vals, node_ids
+
+
 def _build_full_data(model, edge_dist: float = 0.0, dataset=None, lazy: bool = False) -> dict:
     """
     Build the complete, un-filtered result data dict from the live model and
@@ -409,17 +539,7 @@ def _build_full_data(model, edge_dist: float = 0.0, dataset=None, lazy: bool = F
         c) for c in ds0["displacements"].coords["Component"].values] if "displacements" in ds0.data_vars else []
 
     # Classify members: longitudinal = both nodes share same Z and same Y
-    _z_tol = 1e-3
-    longitudinal_members = []
-    transverse_members = []
-    for tag, (n1, n2) in members.items():
-        if n1 not in nodes or n2 not in nodes:
-            continue
-        if (abs(nodes[n1][2] - nodes[n2][2]) < _z_tol and
-                abs(nodes[n1][1] - nodes[n2][1]) < _z_tol):
-            longitudinal_members.append(tag)
-        else:
-            transverse_members.append(tag)
+    longitudinal_members, transverse_members = split_longitudinal_transverse(nodes, members)
 
     data: dict = {
         "nodes": {str(k): list(v) for k, v in nodes.items()},
